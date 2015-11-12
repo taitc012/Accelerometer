@@ -77,7 +77,8 @@ public class MainActivity extends Activity implements SensorEventListener {
             output.write(data02.getBytes());   //利用getBytes()將字串內容換為Byte
             output.write(data03.getBytes());
             output.write(data04.getBytes());
-            output.close();*/
+            output.close();
+            */
         }catch(Exception e){
             e.printStackTrace();
         }
