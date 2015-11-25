@@ -6,17 +6,19 @@ package com.example.taitc.accelerometer;
         import android.hardware.SensorEvent;
         import android.hardware.SensorEventListener;
         import android.hardware.SensorManager;
+        import android.net.Uri;
         import android.os.Bundle;
         import android.os.Vibrator;
         import android.widget.TextView;
-        import java.io.BufferedWriter;
-        import java.io.File;
-        import java.io.FileWriter;
+
+        import com.google.android.gms.appindexing.Action;
+        import com.google.android.gms.appindexing.AppIndex;
+        import com.google.android.gms.common.api.GoogleApiClient;
+
         import java.io.FileOutputStream;
-        import java.io.IOException;
         import java.util.Date;
         import java.text.SimpleDateFormat;
-        import java.util.Calendar;
+
 
 public class MainActivity extends Activity implements SensorEventListener {
 
@@ -37,7 +39,13 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     private float vibrateThreshold = 0;
 
-    float [] gravity={0,0,0};
+    float[] gravity = {0, 0, 0};
+
+    static final float timeConstant = 0.297f;
+    private float alpha = 0.0f;
+    private float timestamp = System.nanoTime();
+    private float timestampOld = System.nanoTime();
+    private int count = 0;
 
     FileOutputStream output;
 
@@ -45,6 +53,11 @@ public class MainActivity extends Activity implements SensorEventListener {
     private TextView currentX, currentY, currentZ, maxX, maxY, maxZ, magA;
 
     public Vibrator v;
+    /**
+     * ATTENTION: This was auto-generated to implement the App Indexing API.
+     * See https://g.co/AppIndexing/AndroidStudio for more information.
+     */
+    private GoogleApiClient client;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -57,33 +70,27 @@ public class MainActivity extends Activity implements SensorEventListener {
             // success! we have an accelerometer
 
             accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
-            sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
+            sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_FASTEST);
             vibrateThreshold = accelerometer.getMaximumRange() / 2;
         } else {
             // fai! we dont have an accelerometer!
         }
 
-        //initialize vibration
-        v = (Vibrator) this.getSystemService(Context.VIBRATOR_SERVICE);
-
-        try{
-            /*String data01 = "This is OutputStream Data01!";
-            String data02 = "\n";
-            String data03 = "Hello! This is Data02!!";
-            String data04 = "\n";*/
+        try {
             //建立FileOutputStream物件，路徑為SD卡中的output.txt
-            output = new FileOutputStream("/sdcard/output.txt");
-            /*output.write(data01.getBytes());  //write()寫入字串，並將字串以byte形式儲存。
-            output.write(data02.getBytes());   //利用getBytes()將字串內容換為Byte
-            output.write(data03.getBytes());
-            output.write(data04.getBytes());
-            output.close();
-            */
-        }catch(Exception e){
+            output = new FileOutputStream("/sdcard/output.txt", false);
+        } catch (Exception e) {
             e.printStackTrace();
         }
 
+        timestamp = System.nanoTime();
+        timestampOld = System.nanoTime();
+        count = 0;
 
+
+        // ATTENTION: This was auto-generated to implement the App Indexing API.
+        // See https://g.co/AppIndexing/AndroidStudio for more information.
+        client = new GoogleApiClient.Builder(this).addApi(AppIndex.API).build();
     }
 
     public void initializeViews() {
@@ -101,14 +108,23 @@ public class MainActivity extends Activity implements SensorEventListener {
     //onResume() register the accelerometer for listening the events
     protected void onResume() {
         super.onResume();
-        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
+        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_FASTEST);
+
+        try {
+            output = new FileOutputStream("/sdcard/output.txt", false);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        timestamp = System.nanoTime();
+        timestampOld = System.nanoTime();
+        count = 0;
     }
 
     //onPause() unregister the accelerometer for stop listening the events
     protected void onPause() {
         try {
             output.close();
-        }catch(Exception e){
+        } catch (Exception e) {
             e.printStackTrace();
         }
         super.onPause();
@@ -124,9 +140,9 @@ public class MainActivity extends Activity implements SensorEventListener {
     public void onSensorChanged(SensorEvent event) {
 
         // clean current values
-        displayCleanValues();
+        //displayCleanValues();
         // display the current x,y,z accelerometer values
-        displayCurrentValues();
+        //displayCurrentValues();
         // display the max x,y,z accelerometer values
         //displayMaxValues();
 
@@ -135,24 +151,43 @@ public class MainActivity extends Activity implements SensorEventListener {
         deltaY = Math.abs(lastY - event.values[1]);
         deltaZ = Math.abs(lastZ - event.values[2]);*/
 
-        final float alpha = 0.1f;
+        //float alpha = 0.02f;
 
-        gravity[0] = alpha * gravity[0] + (1-alpha) * event.values[0];
-        gravity[1] = alpha * gravity[1] + (1-alpha) * event.values[1];
-        gravity[2] = alpha * gravity[2] + (1-alpha) * event.values[2];
+        float[] input = new float[]{0, 0, 0};
 
-        deltaX = event.values[0] - gravity[0];
-        deltaY = event.values[1] - gravity[1];
-        deltaZ = event.values[2] - gravity[2];
+        System.arraycopy(event.values, 0, input, 0, event.values.length);
 
-        mag = (float) Math.sqrt( deltaX*deltaX + deltaY*deltaY + deltaZ*deltaZ );
+        timestamp = System.nanoTime();
+
+        // Find the sample period (between updates).
+        // Convert from nanoseconds to seconds
+        float dt = 1 / (count / ((timestamp - timestampOld) / 1000000000.0f));
+
+        count++;
+
+        // Calculate alpha
+        alpha = timeConstant / (timeConstant + dt);
+
+        gravity[0] = alpha * gravity[0] + (1.0f - alpha) * input[0];
+        gravity[1] = alpha * gravity[1] + (1.0f - alpha) * input[1];
+        gravity[2] = alpha * gravity[2] + (1.0f - alpha) * input[2];
+
+        deltaX = input[0] - gravity[0];
+        deltaY = input[1] - gravity[1];
+        deltaZ = input[2] - gravity[2];
+
+        mag = (float) Math.sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
+
+        //display value
+        displayCleanValues();
+        displayCurrentValues();
 
         SimpleDateFormat s = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
         String format = s.format(new Date());
         String newline = "\n";
         String whitespace = " ";
 
-        try{
+        try {
 
             output.write(format.getBytes());
             output.write(whitespace.getBytes());
@@ -164,10 +199,9 @@ public class MainActivity extends Activity implements SensorEventListener {
             output.write(whitespace.getBytes());
             output.write(Float.toString(deltaZ).getBytes());
             output.write(newline.getBytes());
-        }catch(Exception e){
+        } catch (Exception e) {
             e.printStackTrace();
         }
-
 
 
     }
@@ -181,11 +215,54 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     // display the current x,y,z accelerometer values
     public void displayCurrentValues() {
-        currentX.setText(Float.toString(deltaX));
+        /*currentX.setText(Float.toString(deltaX));
         currentY.setText(Float.toString(deltaY));
         currentZ.setText(Float.toString(deltaZ));
-        magA.setText(Float.toString(mag));
+        magA.setText(Float.toString(mag));*/
+        currentX.setText(String.format("%.4f", deltaX));
+        currentY.setText(String.format("%.4f", deltaY));
+        currentZ.setText(String.format("%.4f", deltaZ));
+        magA.setText(String.format("%.4f", mag));
     }
 
 
+    @Override
+    public void onStart() {
+        super.onStart();
+
+        // ATTENTION: This was auto-generated to implement the App Indexing API.
+        // See https://g.co/AppIndexing/AndroidStudio for more information.
+        client.connect();
+        Action viewAction = Action.newAction(
+                Action.TYPE_VIEW, // TODO: choose an action type.
+                "Main Page", // TODO: Define a title for the content shown.
+                // TODO: If you have web page content that matches this app activity's content,
+                // make sure this auto-generated web page URL is correct.
+                // Otherwise, set the URL to null.
+                Uri.parse("http://host/path"),
+                // TODO: Make sure this auto-generated app deep link URI is correct.
+                Uri.parse("android-app://com.example.taitc.accelerometer/http/host/path")
+        );
+        AppIndex.AppIndexApi.start(client, viewAction);
+    }
+
+    @Override
+    public void onStop() {
+        super.onStop();
+
+        // ATTENTION: This was auto-generated to implement the App Indexing API.
+        // See https://g.co/AppIndexing/AndroidStudio for more information.
+        Action viewAction = Action.newAction(
+                Action.TYPE_VIEW, // TODO: choose an action type.
+                "Main Page", // TODO: Define a title for the content shown.
+                // TODO: If you have web page content that matches this app activity's content,
+                // make sure this auto-generated web page URL is correct.
+                // Otherwise, set the URL to null.
+                Uri.parse("http://host/path"),
+                // TODO: Make sure this auto-generated app deep link URI is correct.
+                Uri.parse("android-app://com.example.taitc.accelerometer/http/host/path")
+        );
+        AppIndex.AppIndexApi.end(client, viewAction);
+        client.disconnect();
+    }
 }
